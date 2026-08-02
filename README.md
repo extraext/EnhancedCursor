@@ -1,6 +1,8 @@
 # EnhancedCursor
 This mod is a lightweight QoL mod for KSP that improves your camera control.
 
+[Watch the way EnhancedCursor works](https://www.youtube.com/watch?v=weJEOZMZ8lc)
+
 What it does:
 
 -*Smooth Camera Panning*, as it hides and locks your cursor in place while holding right-click, letting you orbit your camera infinitely without hitting your physical monitor edges or letting the cursor drift.
