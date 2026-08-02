@@ -2,6 +2,7 @@
 This mod is a lightweight QoL mod for KSP that improves your camera control.
 
 What it does:
+
 -Smooth Camera Panning, as it hides and locks your cursor in place while holding right-click, letting you orbit your camera infinitely without hitting your physical monitor edges or letting the cursor drift.
 
 -No Screen-Center Jumps, as it eliminates awkward cursor resetting and stops unwanted selections or hovers through the center of your screen during camera movement.
