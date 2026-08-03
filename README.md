@@ -15,7 +15,7 @@ It is also **configurable**, as it includes several features like Idle Cursor Au
 ### *(**Note**: This mod is only compatible with Windows PCs.)*
 ----------------------------------------------------------------------------------
 
-**Installation**: Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.2.0\Gamedata to the Gamedata folder in your KSP directory.
+**Installation**: Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.3.0\Gamedata to the Gamedata folder in your KSP directory.
 
 ----------------------------------------------------------------------------------
 ## License
