@@ -24,5 +24,5 @@ It is also **configurable**, as it includes several features like Idle Cursor Au
 This project is licensed under the **[Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/)** license.
 
 ----------------------------------------------------------------------------------
-*if you encounter any bugs, please inform me by creating a new issue on the GitHub link provided. Pull requests are not allowed.*
+*if you encounter any bugs, please inform me by creating a new issue. Pull requests are not allowed.*
 
