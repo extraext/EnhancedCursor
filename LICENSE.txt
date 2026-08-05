@@ -1,4 +1,4 @@
-EnhancedCursor v1.3.0
+EnhancedCursor v1.5.0
 Copyright (c) 2026 extraext
 
 This work is licensed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License.
