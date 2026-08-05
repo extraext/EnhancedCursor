@@ -5,7 +5,7 @@
     <OutputPath>bin\Release</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     
-    <KSPDirectory>D:\MSimulators\Kerbal Space Program</KSPDirectory>
+    <KSPDirectory>D:\Steam\steamapps\common\Kerbal Space Program</KSPDirectory>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,5 +27,11 @@
     <Reference Include="UnityEngine.AnimationModule">
       <HintPath>$(KSPDirectory)\KSP_x64_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
     </Reference>
+	<Reference Include="UnityEngine.ImageConversionModule">
+	  <HintPath>$(KSPDirectory)\KSP_x64_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+	</Reference>
+	<Reference Include="0Harmony">
+	  <HintPath>$(KSPDirectory)\Gamedata\000_Harmony\0Harmony.dll</HintPath>
+	</Reference>
   </ItemGroup>
 </Project>
