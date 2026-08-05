@@ -1,55 +1,40 @@
 using UnityEngine;
 using System;
 using System.Runtime.InteropServices;
-using KSP.UI.Screens;
 
 namespace EnhancedCursor
 {
     [KSPAddon(KSPAddon.Startup.EveryScene, false)]
     public class EnhancedCursorAddon : MonoBehaviour
     {
-        // win32 api
-        [DllImport("user32.dll")]
-        private static extern bool SetCursorPos(int X, int Y);
+        public static EnhancedCursorAddon Instance { get; private set; }
 
-        [DllImport("user32.dll")]
-        private static extern bool GetCursorPos(out POINT lpPoint);
+        [DllImport("user32.dll")] private static extern bool SetCursorPos(int X, int Y);
+        [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
+        [DllImport("user32.dll")] private static extern bool ClipCursor(ref RECT lpRect);
+        [DllImport("user32.dll")] private static extern bool ClipCursor(IntPtr lpRect);
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        [DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
 
-        [DllImport("user32.dll")]
-        private static extern bool ClipCursor(ref RECT lpRect);
-
-        [DllImport("user32.dll")]
-        private static extern bool ClipCursor(IntPtr lpRect);
-
-        [DllImport("user32.dll")]
-        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetActiveWindow();
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct POINT { public int X; public int Y; }
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+        [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+        [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 
         private bool isPanning = false;
         private bool isUIHidden = false;
-        private bool wasUIHidden = false;
         private bool isInFacility = false;
         private POINT savedClickPos;
         private const string LOCK_ID = "EnhancedCursor_PanLock";
 
-        // idle auto-hide feature
         private Vector3 lastMousePos;
         private float idleTimer = 0f;
         private bool isIdleHidden = false;
-
         private bool isWindowClipped = false;
 
         private Texture2D haloTexture = null;
 
         private static bool IsWindows => Application.platform == RuntimePlatform.WindowsPlayer || Application.platform == RuntimePlatform.WindowsEditor;
+
+        private void Awake() => Instance = this;
 
         private void Start()
         {
@@ -58,29 +43,38 @@ namespace EnhancedCursor
 
             GameEvents.onGUIAstronautComplexSpawn.Add(OnFacilityOpen);
             GameEvents.onGUIAstronautComplexDespawn.Add(OnFacilityClose);
-
             GameEvents.onGUIMissionControlSpawn.Add(OnFacilityOpen);
             GameEvents.onGUIMissionControlDespawn.Add(OnFacilityClose);
-
             GameEvents.onGUIAdministrationFacilitySpawn.Add(OnFacilityOpen);
             GameEvents.onGUIAdministrationFacilityDespawn.Add(OnFacilityClose);
-
             GameEvents.onGUIRnDComplexSpawn.Add(OnFacilityOpen);
             GameEvents.onGUIRnDComplexDespawn.Add(OnFacilityClose);
 
             lastMousePos = Input.mousePosition;
-
             GenerateHaloTexture();
-
-            // Initialize cached mod compatibility check
             ModChecker.InitializeCheck("ThroughTheEyes", "ThroughTheEyes.ThroughTheEyes", "active");
+
+            CursorSettings.ApplyHardwareCursor(true);
+        }
+
+        public bool ShouldSuppressHide()
+        {
+            return !isPanning && !(CursorSettings.HideCursorInF2 && isUIHidden) && !isIdleHidden;
         }
 
         private void OnHideUI() => isUIHidden = true;
-        private void OnShowUI() => isUIHidden = false;
+        private void OnShowUI()
+        {
+            isUIHidden = false;
+            CursorSettings.ApplyHardwareCursor(true);
+        }
 
         private void OnFacilityOpen() => isInFacility = true;
-        private void OnFacilityClose() => isInFacility = false;
+        private void OnFacilityClose()
+        {
+            isInFacility = false;
+            CursorSettings.ApplyHardwareCursor(true);
+        }
 
         private void GenerateHaloTexture()
         {
@@ -89,7 +83,7 @@ namespace EnhancedCursor
             Color transparent = new Color(0, 0, 0, 0);
             float center = texSize / 2f;
             float outerRadius = texSize / 2f - 2f;
-            float innerRadius = outerRadius - 6f; 
+            float innerRadius = outerRadius - 6f;
 
             for (int y = 0; y < texSize; y++)
             {
@@ -116,13 +110,15 @@ namespace EnhancedCursor
         {
             UpdateWindowClamp();
 
-            if (!CursorSettings.ModEnabled || 
+            bool isInvalidScene = !CursorSettings.ModEnabled || 
                 HighLogic.LoadedScene == GameScenes.MAINMENU || 
                 HighLogic.LoadedScene == GameScenes.SETTINGS || 
                 HighLogic.LoadedScene == GameScenes.CREDITS || 
                 HighLogic.LoadedScene == GameScenes.LOADING || 
                 HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
-                (HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility))
+                (HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility);
+
+            if (isInvalidScene)
             {
                 if (isPanning) StopPanning();
                 ResetIdleState();
@@ -151,33 +147,64 @@ namespace EnhancedCursor
                 return;
             }
 
-            if (Input.GetMouseButtonDown(1))
-            {
-                StartPanning();
-            }
-            else if (Input.GetMouseButtonUp(1) && isPanning)
-            {
-                StopPanning();
-            }
+            if (Input.GetMouseButtonDown(1)) StartPanning();
+            else if (Input.GetMouseButtonUp(1) && isPanning) StopPanning();
+        }
+
+        private void LateUpdate()
+        {
+            EnforceCursorState();
         }
 
         private void OnGUI()
         {
-            if (CursorSettings.IsActiveInCurrentScene() && 
-                CursorSettings.EnableCursorHalo && 
-                !isPanning && 
-                !isIdleHidden && 
-                Cursor.visible && 
-                haloTexture != null)
-            {
-                Vector2 mousePos = Event.current.mousePosition;
-                float size = CursorSettings.HaloSize;
-                Rect haloRect = new Rect(mousePos.x - size / 2f, mousePos.y - size / 2f, size, size);
+            EnforceCursorState();
 
-                Color prevColor = GUI.color;
-                GUI.color = new Color(1f, 1f, 1f, CursorSettings.HaloOpacity);
-                GUI.DrawTexture(haloRect, haloTexture);
-                GUI.color = prevColor;
+            if (CursorSettings.IsActiveInCurrentScene() && !isPanning && !isIdleHidden && !(CursorSettings.HideCursorInF2 && isUIHidden))
+            {
+                if (CursorSettings.EnableCursorHalo && Cursor.visible && haloTexture != null)
+                {
+                    GUI.depth = -10000;
+                    Vector2 mousePos = Event.current.mousePosition;
+                    float size = CursorSettings.HaloSize;
+                    Rect haloRect = new Rect(mousePos.x - size / 2f, mousePos.y - size / 2f, size, size);
+                    Color prevColor = GUI.color;
+                    GUI.color = new Color(1f, 1f, 1f, CursorSettings.HaloOpacity);
+                    GUI.DrawTexture(haloRect, haloTexture);
+                    GUI.color = prevColor;
+                }
+            }
+        }
+
+        private void EnforceCursorState()
+        {
+            bool isInvalidScene = !CursorSettings.ModEnabled || 
+                HighLogic.LoadedScene == GameScenes.MAINMENU || 
+                HighLogic.LoadedScene == GameScenes.SETTINGS || 
+                HighLogic.LoadedScene == GameScenes.CREDITS || 
+                HighLogic.LoadedScene == GameScenes.LOADING || 
+                HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
+                (HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility);
+
+            if (isInvalidScene)
+            {
+                if (isPanning) StopPanning();
+                return;
+            }
+
+            bool shouldHideCursor = isPanning || (CursorSettings.HideCursorInF2 && isUIHidden) || isIdleHidden;
+
+            if (shouldHideCursor)
+            {
+                if (isPanning && IsWindows) SetCursorPos(savedClickPos.X, savedClickPos.Y);
+                Cursor.visible = false;
+            }
+            else
+            {
+                if (CursorSettings.IsActiveInCurrentScene())
+                {
+                    CursorSettings.ApplyHardwareCursor(true);
+                }
             }
         }
 
@@ -222,7 +249,7 @@ namespace EnhancedCursor
                 if (isIdleHidden)
                 {
                     isIdleHidden = false;
-                    Cursor.visible = true;
+                    CursorSettings.ApplyHardwareCursor(true);
                 }
             }
             else if (CursorSettings.EnableIdleAutoHide && HighLogic.LoadedScene == GameScenes.FLIGHT && CursorSettings.EnableInFlight && !isUIHidden)
@@ -231,6 +258,7 @@ namespace EnhancedCursor
                 if (idleTimer >= CursorSettings.IdleHideTimeout)
                 {
                     isIdleHidden = true;
+                    Cursor.visible = false;
                 }
             }
         }
@@ -241,53 +269,7 @@ namespace EnhancedCursor
             if (isIdleHidden)
             {
                 isIdleHidden = false;
-                Cursor.visible = true;
-            }
-        }
-
-        private void LateUpdate()
-        {
-            if (!CursorSettings.ModEnabled || 
-                HighLogic.LoadedScene == GameScenes.MAINMENU || 
-                HighLogic.LoadedScene == GameScenes.SETTINGS || 
-                HighLogic.LoadedScene == GameScenes.CREDITS || 
-                HighLogic.LoadedScene == GameScenes.LOADING || 
-                HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
-                (HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility))
-            {
-                if (wasUIHidden)
-                {
-                    Cursor.visible = true;
-                    wasUIHidden = false;
-                }
-                return;
-            }
-
-            // the main enhancement (panning)
-            if (isPanning)
-            {
-                if (IsWindows) SetCursorPos(savedClickPos.X, savedClickPos.Y);
-                Cursor.visible = false;
-                return;
-            }
-
-            // hiding the cursor while in screenshot mode
-            if (CursorSettings.HideCursorInF2 && isUIHidden)
-            {
-                Cursor.visible = false;
-                wasUIHidden = true;
-                return;
-            }
-            else if (wasUIHidden)
-            {
-                Cursor.visible = true;
-                wasUIHidden = false;
-            }
-
-            // idle auto-hide
-            if (isIdleHidden)
-            {
-                Cursor.visible = false;
+                CursorSettings.ApplyHardwareCursor(true);
             }
         }
 
@@ -325,7 +307,9 @@ namespace EnhancedCursor
             }
 
             if (IsWindows) SetCursorPos(savedClickPos.X, savedClickPos.Y);
+
             Cursor.visible = true;
+            CursorSettings.ApplyHardwareCursor(true);
         }
 
         private void OnApplicationFocus(bool hasFocus)
@@ -339,6 +323,10 @@ namespace EnhancedCursor
                     isWindowClipped = false;
                 }
             }
+            else
+            {
+                CursorSettings.ApplyHardwareCursor(true);
+            }
         }
 
         private void OnDisable()
@@ -346,6 +334,7 @@ namespace EnhancedCursor
             StopPanning();
             ResetIdleState();
             isInFacility = false;
+
             if (isWindowClipped && IsWindows)
             {
                 ClipCursor(IntPtr.Zero);
@@ -360,13 +349,10 @@ namespace EnhancedCursor
 
             GameEvents.onGUIAstronautComplexSpawn.Remove(OnFacilityOpen);
             GameEvents.onGUIAstronautComplexDespawn.Remove(OnFacilityClose);
-
             GameEvents.onGUIMissionControlSpawn.Remove(OnFacilityOpen);
             GameEvents.onGUIMissionControlDespawn.Remove(OnFacilityClose);
-
             GameEvents.onGUIAdministrationFacilitySpawn.Remove(OnFacilityOpen);
             GameEvents.onGUIAdministrationFacilityDespawn.Remove(OnFacilityClose);
-
             GameEvents.onGUIRnDComplexSpawn.Remove(OnFacilityOpen);
             GameEvents.onGUIRnDComplexDespawn.Remove(OnFacilityClose);
 
