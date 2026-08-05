@@ -19,7 +19,7 @@ It is also **configurable**, as it includes several features like Idle Cursor Au
 
 **Installation:** Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.3.0\Gamedata to the Gamedata folder in your KSP directory.
 
-**Dependencies:** Harmony2 is a dependency, to get it, you can go to CKAN and install it, or [install it from github](https://github.com/KSPModdingLibs/HarmonyKSP/releases/tag/2.2.1.0).
+**Dependencies:** Harmony is a dependency, to get it, you can go to CKAN and install it, or [install it from github](https://github.com/KSPModdingLibs/HarmonyKSP/releases/tag/2.2.1.0).
 
 ----------------------------------------------------------------------------------
 ## License
