@@ -1,22 +1,24 @@
 # EnhancedCursor
 This mod is a lightweight QoL mod for KSP that improves your camera control.
 
-![](https://cdn.discordapp.com/attachments/979471883886030868/1533585314860372029/Screenshot_2026-08-03_001113.png?ex=6a71061f&is=6a6fb49f&hm=21ed36cb37903789e1447989a6b04198fd917ba47bb2f1409a12ec11565e0a4e&)
+![](https://media.discordapp.net/attachments/979471883886030868/1534614573347377233/Screenshot_2026-08-05_202922.png?ex=6a74c4b2&is=6a737332&hm=b33f5302aeadc73f5545682b2ea95fadb583d9ee08d04b6b1ee102a09b754819&=&format=webp&quality=lossless)
 
-What it does:
+**What it does:**
 
 -*Smooth Camera Panning*, as it hides and locks your cursor in place while holding right-click, letting you orbit your camera infinitely without hitting your physical monitor edges or letting the cursor drift.
 
--*No Screen-Center Jumps*, as it eliminates awkward cursor resetting and stops unwanted selections or hovers through the center of your screen during camera movement.
+-*No Weird Jumps*, as it eliminates awkward cursor resetting and stops unwanted selections or hovers through the center of your screen during camera movement.
 
+-*Customizable Cursors*, you can now place .png cursor files into EnhancedCursor\Cursors and enjoy the customized cursor, all .pngs are accessible through the Gallery section after enabling the feature. You can
+also change the hotspot of the cursor so it matches with the supposed hotspot of your custom cursor.
 
 It is also **configurable**, as it includes several features like Idle Cursor Auto-hide feature and the ability to hide the cursor while in screenshot mode.
 
 ### *(**Note**: This mod is only compatible with Windows PCs.)*
 ----------------------------------------------------------------------------------
 
-**Installation**: Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.3.0\Gamedata to the Gamedata folder in your KSP directory.
-
+**Installation:** Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.3.0\Gamedata to the Gamedata folder in your KSP directory.
+**Dependencies:** Harmony2 is a dependency, to get it, you can go to CKAN and install it, or [install it from github](https://github.com/KSPModdingLibs/HarmonyKSP/releases/tag/2.2.1.0).
 ----------------------------------------------------------------------------------
 ## License
 
