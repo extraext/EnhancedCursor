@@ -1,6 +1,8 @@
 using UnityEngine;
 using System;
 using System.IO;
+using System.Text;
+using System.Globalization;
 using System.Collections.Generic;
 using KSP.UI.Screens;
 using HarmonyLib;
@@ -10,6 +12,7 @@ namespace EnhancedCursor
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class CursorSettings : MonoBehaviour
     {
+        // Configuration settings
         public static bool ModEnabled = true;
         public static bool EnableInFlight = true;
         public static bool EnableInEditor = true;
@@ -29,30 +32,38 @@ namespace EnhancedCursor
         public static float CustomCursorSize = 32.0f;
         public static string SelectedCursorFileName = "";
 
-        // the hotspot
         public static float HotspotX = 0f;
         public static float HotspotY = 0f;
 
-        // cache
+        // runtime state & caching
+        private static Dictionary<string, Vector2> cursorHotspots = new Dictionary<string, Vector2>();
         private static Vector2 lastAppliedHotspot = new Vector2(-1f, -1f);
         private static Texture2D lastAppliedTexture = null;
 
         private static ApplicationLauncherButton appButton = null;
         private bool showWindow = false;
 
-        private Rect windowRect = new Rect(Screen.width - 340, 60, 320, 300);
+        private Rect windowRect = new Rect(Screen.width - 350, 60, 330, 300);
         private const int WINDOW_ID = 847201;
         private const string CAM_LOCK_ID = "EnhancedCursor_UILock";
         private bool isCameraLocked = false;
 
         private Vector2 galleryScrollPos = Vector2.zero;
-
         public static bool PendingCursorApply = false;
         public static bool isCustomCursorApplied = false;
 
-        private static Harmony harmonyInstance = null;
+        // idle aut-hide
+        private float idleTimer = 0f;
+        private Vector3 lastMousePos = Vector3.zero;
+        private static bool isIdleHidden = false;
 
+        // screenshot mode
+        private bool uiHiddenF2 = false;
+
+        private static Harmony harmonyInstance = null;
         private static Texture2D redDotTex = null;
+        private static Texture2D crosshairTex = null;
+        private static Texture2D haloRingTex = null;
 
         public struct CursorFileItem
         {
@@ -75,11 +86,23 @@ namespace EnhancedCursor
             }
         }
 
+        public static string PluginDataPath
+        {
+            get
+            {
+                string path = Path.Combine(KSPUtil.ApplicationRootPath, "GameData", "EnhancedCursor", "PluginData");
+                if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+                return path;
+            }
+        }
+
+        private static string HotspotsJsonPath => Path.Combine(PluginDataPath, "hotspots.json");
+
         private void Awake()
         {
             DontDestroyOnLoad(this);
             LoadSettings();
-            InitDotTexture();
+            InitOverlayTextures();
 
             try
             {
@@ -96,13 +119,51 @@ namespace EnhancedCursor
             }
         }
 
-        private void InitDotTexture()
+        private void InitOverlayTextures()
         {
             if (redDotTex == null)
             {
                 redDotTex = new Texture2D(1, 1);
                 redDotTex.SetPixel(0, 0, Color.red);
                 redDotTex.Apply();
+            }
+
+            if (crosshairTex == null)
+            {
+                crosshairTex = new Texture2D(1, 1);
+                crosshairTex.SetPixel(0, 0, new Color(0f, 1f, 0f, 0.75f));
+                crosshairTex.Apply();
+            }
+
+            if (haloRingTex == null)
+            {
+                int sz = 64;
+                haloRingTex = new Texture2D(sz, sz, TextureFormat.RGBA32, false);
+                float center = sz / 2f;
+                float outerR = sz / 2f - 1f;
+                float innerR = outerR - 6f;
+
+                for (int y = 0; y < sz; y++)
+                {
+                    for (int x = 0; x < sz; x++)
+                    {
+                        float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center, center));
+                        if (dist >= innerR && dist <= outerR)
+                        {
+                            float alpha = Mathf.SmoothStep(0f, 1f, (outerR - dist) / 2f);
+                            if (dist < innerR + 2f)
+                                alpha = Mathf.SmoothStep(0f, 1f, (dist - innerR) / 2f);
+                            haloRingTex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                        }
+                        else
+                        {
+                            haloRingTex.SetPixel(x, y, Color.clear);
+                        }
+                    }
+                }
+                haloRingTex.filterMode = FilterMode.Bilinear;
+                haloRingTex.wrapMode = TextureWrapMode.Clamp;
+                haloRingTex.Apply();
             }
         }
 
@@ -111,7 +172,15 @@ namespace EnhancedCursor
             GameEvents.onGUIApplicationLauncherReady.Add(OnAppLauncherReady);
             GameEvents.onGUIApplicationLauncherDestroyed.Add(OnAppLauncherDestroyed);
             GameEvents.onLevelWasLoaded.Add(OnLevelWasLoaded);
+            GameEvents.onHideUI.Add(OnHideUI);
+            GameEvents.onShowUI.Add(OnRestoreUI);
+
             ScanCursorsFromDisk();
+        }
+
+        private void OnDisable()
+        {
+            UnlockCamera();
         }
 
         private void OnDestroy()
@@ -119,23 +188,38 @@ namespace EnhancedCursor
             GameEvents.onGUIApplicationLauncherReady.Remove(OnAppLauncherReady);
             GameEvents.onGUIApplicationLauncherDestroyed.Remove(OnAppLauncherDestroyed);
             GameEvents.onLevelWasLoaded.Remove(OnLevelWasLoaded);
+            GameEvents.onHideUI.Remove(OnHideUI);
+            GameEvents.onShowUI.Remove(OnRestoreUI);
+
             RemoveAppButton();
             UnlockCamera();
             CleanupTextures();
+
+            if (redDotTex != null) { DestroyImmediate(redDotTex); redDotTex = null; }
+            if (crosshairTex != null) { DestroyImmediate(crosshairTex); crosshairTex = null; }
+            if (haloRingTex != null) { DestroyImmediate(haloRingTex); haloRingTex = null; }
         }
 
         private void OnLevelWasLoaded(GameScenes scene)
         {
+            UnlockCamera();
+            showWindow = false;
             PendingCursorApply = true;
         }
+
+        private void OnHideUI() => uiHiddenF2 = true;
+        private void OnRestoreUI() => uiHiddenF2 = false;
 
         private static void CleanupTextures()
         {
             foreach (var item in LoadedCursors)
             {
-                if (item.Texture != null) Destroy(item.Texture);
+                if (item.Texture != null) DestroyImmediate(item.Texture);
             }
             LoadedCursors.Clear();
+
+            lastAppliedTexture = null;
+            lastAppliedHotspot = new Vector2(-1f, -1f);
         }
 
         public static void ScanCursorsFromDisk()
@@ -171,6 +255,12 @@ namespace EnhancedCursor
                         {
                             ActiveCursorItem = item;
                             HasActiveCursor = true;
+
+                            if (cursorHotspots.TryGetValue(fileName, out Vector2 savedSpot))
+                            {
+                                HotspotX = savedSpot.x;
+                                HotspotY = savedSpot.y;
+                            }
                         }
                     }
                 }
@@ -199,31 +289,41 @@ namespace EnhancedCursor
         }
 
         public static void ApplyHardwareCursor(bool forceVisible = true)
-        {
-            if (ModEnabled && EnableCustomCursor && HasActiveCursor && IsActiveInCurrentScene() && ActiveCursorItem.Texture != null)
-            {
-                Vector2 targetHotspot = new Vector2(Mathf.Round(HotspotX), Mathf.Round(HotspotY));
+		{
+			if (ModEnabled && EnableCustomCursor && HasActiveCursor && IsActiveInCurrentScene() && ActiveCursorItem.Texture != null)
+			{
+				Vector2 targetHotspot = new Vector2(Mathf.Round(HotspotX), Mathf.Round(HotspotY));
 
-                if (lastAppliedTexture != ActiveCursorItem.Texture || lastAppliedHotspot != targetHotspot)
-                {
-                    OverwriteKSPStockTextures();
-                    Cursor.SetCursor(ActiveCursorItem.Texture, targetHotspot, CursorMode.Auto);
-                    lastAppliedTexture = ActiveCursorItem.Texture;
-                    lastAppliedHotspot = targetHotspot;
-                }
+				if (lastAppliedTexture != ActiveCursorItem.Texture || lastAppliedHotspot != targetHotspot)
+				{
+					Cursor.SetCursor(ActiveCursorItem.Texture, targetHotspot, CursorMode.Auto);
+					lastAppliedTexture = ActiveCursorItem.Texture;
+					lastAppliedHotspot = targetHotspot;
+				}
 
-                if (forceVisible) Cursor.visible = true;
-                isCustomCursorApplied = true;
-            }
-            else if (isCustomCursorApplied)
-            {
-                Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
-                if (forceVisible) Cursor.visible = true;
-                isCustomCursorApplied = false;
-                lastAppliedTexture = null;
-                lastAppliedHotspot = new Vector2(-1f, -1f);
-            }
-        }
+				OverwriteKSPStockTextures();
+
+				if (forceVisible && !isIdleHidden && !Input.GetMouseButton(1))
+				{
+					Cursor.visible = true;
+				}
+
+				isCustomCursorApplied = true;
+			}
+			else if (isCustomCursorApplied)
+			{
+				Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+
+				if (forceVisible && !Input.GetMouseButton(1))
+				{
+					Cursor.visible = true;
+				}
+
+				isCustomCursorApplied = false;
+				lastAppliedTexture = null;
+				lastAppliedHotspot = new Vector2(-1f, -1f);
+			}
+		}
 
         private static Texture2D LoadTextureFromFile(string filePath)
         {
@@ -234,6 +334,8 @@ namespace EnhancedCursor
 
                 if (ImageConversion.LoadImage(tex, fileData))
                 {
+                    tex.filterMode = FilterMode.Point; 
+                    tex.wrapMode = TextureWrapMode.Clamp; 
                     return tex;
                 }
             }
@@ -268,9 +370,9 @@ namespace EnhancedCursor
                 appButton = ApplicationLauncher.Instance.AddModApplication(
                     OnAppTrue, OnAppFalse,
                     null, null, null, null,
-                    ApplicationLauncher.AppScenes.FLIGHT | 
-                    ApplicationLauncher.AppScenes.VAB | 
-                    ApplicationLauncher.AppScenes.SPH | 
+                    ApplicationLauncher.AppScenes.FLIGHT |
+                    ApplicationLauncher.AppScenes.VAB |
+                    ApplicationLauncher.AppScenes.SPH |
                     ApplicationLauncher.AppScenes.SPACECENTER |
                     ApplicationLauncher.AppScenes.TRACKSTATION,
                     icon
@@ -303,6 +405,46 @@ namespace EnhancedCursor
 
         private void Update()
         {
+            // window bounds lock handling
+            if (ModEnabled && LockToWindow)
+                Cursor.lockState = CursorLockMode.Confined;
+            else if (Cursor.lockState == CursorLockMode.Confined)
+                Cursor.lockState = CursorLockMode.None;
+
+            if (ModEnabled && HideCursorInF2 && uiHiddenF2)
+            {
+                Cursor.visible = false;
+            }
+
+            if (ModEnabled && EnableIdleAutoHide && HighLogic.LoadedScene == GameScenes.FLIGHT)
+            {
+                if (Input.mousePosition == lastMousePos)
+                {
+                    idleTimer += Time.unscaledDeltaTime;
+                    if (idleTimer >= IdleHideTimeout && !isIdleHidden)
+                    {
+                        Cursor.visible = false;
+                        isIdleHidden = true;
+                    }
+                }
+                else
+                {
+                    idleTimer = 0f;
+                    if (isIdleHidden)
+                    {
+                        Cursor.visible = true;
+                        isIdleHidden = false;
+                    }
+                }
+                lastMousePos = Input.mousePosition;
+            }
+            else if (isIdleHidden)
+            {
+                Cursor.visible = true;
+                isIdleHidden = false;
+            }
+
+            // UI camera control lock management
             if (showWindow)
             {
                 Vector2 mouseGUIPos = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
@@ -330,6 +472,11 @@ namespace EnhancedCursor
                 SaveSettings();
                 PendingCursorApply = false;
             }
+            else if (ModEnabled && EnableCustomCursor && HasActiveCursor && IsActiveInCurrentScene())
+            {
+                // ensure no cursor flickering occurs
+                ApplyHardwareCursor(!isIdleHidden && (!HideCursorInF2 || !uiHiddenF2));
+            }
         }
 
         private void UnlockCamera()
@@ -354,7 +501,7 @@ namespace EnhancedCursor
                 height += 30f;
                 if (LoadedCursors.Count > 0)
                 {
-                    int columns = 5;
+                    int columns = 7;
                     int rows = Mathf.CeilToInt((float)LoadedCursors.Count / columns);
                     float contentHeight = rows * 42f;
                     float containerHeight = Mathf.Min(contentHeight, 130f);
@@ -376,8 +523,22 @@ namespace EnhancedCursor
             return height;
         }
 
+        // GUI
         private void OnGUI()
         {
+
+            if (ModEnabled && EnableCursorHalo && !isIdleHidden && (!HideCursorInF2 || !uiHiddenF2) && IsActiveInCurrentScene())
+            {
+                Vector2 mousePos = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                float size = HaloSize;
+                Rect haloRect = new Rect(mousePos.x - (size / 2f), mousePos.y - (size / 2f), size, size);
+
+                Color prevColor = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, HaloOpacity);
+                if (haloRingTex != null) GUI.DrawTexture(haloRect, haloRingTex);
+                GUI.color = prevColor;
+            }
+
             if (showWindow)
             {
                 Event e = Event.current;
@@ -387,6 +548,9 @@ namespace EnhancedCursor
                 }
 
                 windowRect = GUILayout.Window(WINDOW_ID, windowRect, DrawWindow, "Enhanced Cursor");
+
+                windowRect.x = Mathf.Clamp(windowRect.x, 0, Screen.width - windowRect.width);
+                windowRect.y = Mathf.Clamp(windowRect.y, 0, Screen.height - windowRect.height);
             }
         }
 
@@ -401,7 +565,7 @@ namespace EnhancedCursor
 
             if (ModEnabled)
             {
-                GUILayout.Box("", GUILayout.Height(2)); 
+                GUILayout.Box("", GUILayout.Height(2));
 
                 GUILayout.Label("<b>Active Scenes:</b>");
                 bool pFlight = GUILayout.Toggle(EnableInFlight, " Flight Mode");
@@ -415,7 +579,7 @@ namespace EnhancedCursor
 
                 GUILayout.Space(5);
                 GUILayout.Label("<b>Display Options:</b>");
-                
+
                 bool pCenter = GUILayout.Toggle(PinToCenterScreen, " Pin Cursor to the Center");
                 if (pCenter != PinToCenterScreen) { PinToCenterScreen = pCenter; PendingCursorApply = true; }
 
@@ -425,11 +589,11 @@ namespace EnhancedCursor
                 bool pLock = GUILayout.Toggle(LockToWindow, " Lock to KSP's Window Bounds");
                 if (pLock != LockToWindow) { LockToWindow = pLock; PendingCursorApply = true; }
 
-                bool pIdleHide = GUILayout.Toggle(EnableIdleAutoHide, " Idle Auto-Hide (Flight Only)"); // next version will have this working in all scenes
-                if (pIdleHide != EnableIdleAutoHide) 
-                { 
-                    EnableIdleAutoHide = pIdleHide; 
-                    PendingCursorApply = true; 
+                bool pIdleHide = GUILayout.Toggle(EnableIdleAutoHide, " Auto-hide cursor after inactivity (Flight Only)");
+                if (pIdleHide != EnableIdleAutoHide)
+                {
+                    EnableIdleAutoHide = pIdleHide;
+                    PendingCursorApply = true;
                 }
 
                 if (EnableIdleAutoHide)
@@ -452,9 +616,9 @@ namespace EnhancedCursor
                 {
                     GUILayout.BeginHorizontal();
                     GUILayout.Label("<b>Gallery:</b>");
-                    if (GUILayout.Button("Refresh", GUILayout.Width(70))) 
-                    { 
-                        ScanCursorsFromDisk(); 
+                    if (GUILayout.Button("Refresh", GUILayout.Width(70)))
+                    {
+                        ScanCursorsFromDisk();
                     }
                     GUILayout.EndHorizontal();
 
@@ -464,12 +628,12 @@ namespace EnhancedCursor
                     }
                     else
                     {
-                        int columns = 5;
+                        int columns = 7;
                         int rows = Mathf.CeilToInt((float)LoadedCursors.Count / columns);
                         float contentHeight = rows * 42f;
                         float containerHeight = Mathf.Min(contentHeight, 130f);
 
-                        galleryScrollPos = GUILayout.BeginScrollView(galleryScrollPos, false, true, GUILayout.Height(containerHeight));
+                        galleryScrollPos = GUILayout.BeginScrollView(galleryScrollPos, false, true, GUIStyle.none, GUI.skin.verticalScrollbar, GUILayout.Height(containerHeight));
                         GUILayout.BeginHorizontal();
 
                         int count = 0;
@@ -482,6 +646,11 @@ namespace EnhancedCursor
 
                             if (GUI.Button(buttonRect, item.Texture))
                             {
+                                if (HasActiveCursor && !string.IsNullOrEmpty(SelectedCursorFileName))
+                                {
+                                    cursorHotspots[SelectedCursorFileName] = new Vector2(HotspotX, HotspotY);
+                                }
+
                                 if (isSelected)
                                 {
                                     SelectedCursorFileName = "";
@@ -492,14 +661,30 @@ namespace EnhancedCursor
                                     SelectedCursorFileName = item.FileName;
                                     ActiveCursorItem = item;
                                     HasActiveCursor = true;
+
+                                    if (cursorHotspots.TryGetValue(item.FileName, out Vector2 savedSpot))
+                                    {
+                                        HotspotX = savedSpot.x;
+                                        HotspotY = savedSpot.y;
+                                    }
+                                    else
+                                    {
+                                        HotspotX = 0f;
+                                        HotspotY = 0f;
+                                        cursorHotspots[item.FileName] = Vector2.zero;
+                                    }
                                 }
+                                SaveHotspotMemoryOnly();
                                 PendingCursorApply = true;
                             }
 
                             if (isSelected && item.Texture != null && redDotTex != null)
                             {
-                                float normX = Mathf.Clamp01(HotspotX / (float)item.Texture.width);
-                                float normY = Mathf.Clamp01(HotspotY / (float)item.Texture.height);
+                                float texW = Mathf.Max(1f, item.Texture.width);
+                                float texH = Mathf.Max(1f, item.Texture.height);
+
+                                float normX = Mathf.Clamp01(HotspotX / texW);
+                                float normY = Mathf.Clamp01(HotspotY / texH);
 
                                 float dotX = buttonRect.x + (normX * (buttonRect.width - 6));
                                 float dotY = buttonRect.y + (normY * (buttonRect.height - 6));
@@ -525,35 +710,80 @@ namespace EnhancedCursor
                             float maxH = ActiveCursorItem.Texture.height;
 
                             GUILayout.Space(4);
-                            
-                            GUILayout.Label($"   Hotspot X: <b>{Mathf.RoundToInt(HotspotX)}px</b>");
+
+                            // resolution and warning
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label($"Res: <b>{maxW}x{maxH}px</b>");
+                            if (maxW > 128 || maxH > 128)
+                            {
+                                GUI.color = Color.yellow;
+                                GUILayout.Label(" (Warning: >128px may lag OS)");
+                                GUI.color = Color.white;
+                            }
+                            GUILayout.EndHorizontal();
+
+                            GUILayout.BeginHorizontal();
+                            Rect previewRect = GUILayoutUtility.GetRect(64, 64, GUILayout.Width(64), GUILayout.Height(64));
+                            GUI.Box(previewRect, GUIContent.none);
+                            GUI.DrawTexture(previewRect, ActiveCursorItem.Texture, ScaleMode.ScaleToFit);
+
+                            if (crosshairTex != null)
+                            {
+                                float normX = Mathf.Clamp01(HotspotX / Mathf.Max(1f, maxW));
+                                float normY = Mathf.Clamp01(HotspotY / Mathf.Max(1f, maxH));
+
+                                float crossX = previewRect.x + (normX * previewRect.width);
+                                float crossY = previewRect.y + (normY * previewRect.height);
+
+                                // crosshair lines
+                                GUI.DrawTexture(new Rect(previewRect.x, crossY, previewRect.width, 1), crosshairTex);
+                                GUI.DrawTexture(new Rect(crossX, previewRect.y, 1, previewRect.height), crosshairTex);
+
+                                // red hotspot dot
+                                GUI.DrawTexture(new Rect(crossX - 2, crossY - 2, 5, 5), redDotTex);
+                            }
+
+                            GUILayout.BeginVertical();
+                            GUILayout.Label($"  X: <b>{Mathf.RoundToInt(HotspotX)}px</b>");
                             float newHX = GUILayout.HorizontalSlider(HotspotX, 0f, maxW);
                             if (Mathf.RoundToInt(newHX) != Mathf.RoundToInt(HotspotX))
                             {
                                 HotspotX = newHX;
+                                UpdateActiveHotspot(HotspotX, HotspotY);
                                 PendingCursorApply = true;
                             }
 
-                            GUILayout.Label($"   Hotspot Y: <b>{Mathf.RoundToInt(HotspotY)}px</b>");
+                            GUILayout.Label($"  Y: <b>{Mathf.RoundToInt(HotspotY)}px</b>");
                             float newHY = GUILayout.HorizontalSlider(HotspotY, 0f, maxH);
                             if (Mathf.RoundToInt(newHY) != Mathf.RoundToInt(HotspotY))
                             {
                                 HotspotY = newHY;
+                                UpdateActiveHotspot(HotspotX, HotspotY);
                                 PendingCursorApply = true;
                             }
+                            GUILayout.EndVertical();
+                            GUILayout.EndHorizontal();
 
                             GUILayout.BeginHorizontal();
-                            if (GUILayout.Button("Top-Left (0,0)", GUILayout.Height(20)))
+                            if (GUILayout.Button("(0,0)", GUILayout.Height(18)))
                             {
-                                HotspotX = 0f;
-                                HotspotY = 0f;
-                                PendingCursorApply = true;
+                                HotspotX = 0f; HotspotY = 0f;
+                                UpdateActiveHotspot(HotspotX, HotspotY); PendingCursorApply = true;
                             }
-                            if (GUILayout.Button("Center Hotspot", GUILayout.Height(20)))
+                            if (GUILayout.Button("Center", GUILayout.Height(18)))
                             {
-                                HotspotX = Mathf.Round(maxW / 2f);
-                                HotspotY = Mathf.Round(maxH / 2f);
-                                PendingCursorApply = true;
+                                HotspotX = Mathf.Round(maxW / 2f); HotspotY = Mathf.Round(maxH / 2f);
+                                UpdateActiveHotspot(HotspotX, HotspotY); PendingCursorApply = true;
+                            }
+                            if (GUILayout.Button("Top-Right", GUILayout.Height(18)))
+                            {
+                                HotspotX = maxW; HotspotY = 0f;
+                                UpdateActiveHotspot(HotspotX, HotspotY); PendingCursorApply = true;
+                            }
+                            if (GUILayout.Button("Bot-Right", GUILayout.Height(18)))
+                            {
+                                HotspotX = maxW; HotspotY = maxH;
+                                UpdateActiveHotspot(HotspotX, HotspotY); PendingCursorApply = true;
                             }
                             GUILayout.EndHorizontal();
                         }
@@ -562,10 +792,10 @@ namespace EnhancedCursor
 
                 GUILayout.Space(5);
                 bool pHalo = GUILayout.Toggle(EnableCursorHalo, " Cursor Halo");
-                if (pHalo != EnableCursorHalo) 
-                { 
-                    EnableCursorHalo = pHalo; 
-                    PendingCursorApply = true; 
+                if (pHalo != EnableCursorHalo)
+                {
+                    EnableCursorHalo = pHalo;
+                    PendingCursorApply = true;
                 }
 
                 if (EnableCursorHalo)
@@ -588,8 +818,67 @@ namespace EnhancedCursor
             GUI.DragWindow();
         }
 
+        private static void UpdateActiveHotspot(float x, float y)
+        {
+            if (HasActiveCursor && !string.IsNullOrEmpty(SelectedCursorFileName))
+            {
+                cursorHotspots[SelectedCursorFileName] = new Vector2(x, y);
+            }
+        }
+
+        private static void SaveHotspotMemoryOnly()
+        {
+            if (HasActiveCursor && !string.IsNullOrEmpty(SelectedCursorFileName))
+            {
+                cursorHotspots[SelectedCursorFileName] = new Vector2(HotspotX, HotspotY);
+            }
+        }
+
+        private static void LoadHotspotDictionary()
+        {
+            cursorHotspots.Clear();
+            try
+            {
+                string path = HotspotsJsonPath;
+                if (File.Exists(path))
+                {
+                    string json = File.ReadAllText(path);
+                    var loaded = SimpleJson.FromJson(json);
+                    foreach (var pair in loaded)
+                    {
+                        if (!string.IsNullOrEmpty(pair.Key))
+                        {
+                            cursorHotspots[pair.Key] = pair.Value;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[EnhancedCursor] Failed to load hotspots JSON: {ex.Message}");
+            }
+        }
+
+        private static void SaveHotspotDictionary()
+        {
+            try
+            {
+                SaveHotspotMemoryOnly();
+
+                string path = HotspotsJsonPath;
+                string json = SimpleJson.ToJson(cursorHotspots);
+                File.WriteAllText(path, json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[EnhancedCursor] Failed to save hotspots JSON: {ex.Message}");
+            }
+        }
+
         private static void LoadSettings()
         {
+            LoadHotspotDictionary();
+
             KSP.IO.PluginConfiguration config = KSP.IO.PluginConfiguration.CreateForType<CursorSettings>();
             config.load();
             ModEnabled = config.GetValue("ModEnabled", true);
@@ -606,12 +895,23 @@ namespace EnhancedCursor
             HaloOpacity = config.GetValue("HaloOpacity", 0.5f);
             EnableCustomCursor = config.GetValue("EnableCustomCursor", false);
             SelectedCursorFileName = config.GetValue("SelectedCursorFileName", "");
-            HotspotX = config.GetValue("HotspotX", 0f);
-            HotspotY = config.GetValue("HotspotY", 0f);
+
+            if (!string.IsNullOrEmpty(SelectedCursorFileName) && cursorHotspots.TryGetValue(SelectedCursorFileName, out Vector2 savedSpot))
+            {
+                HotspotX = savedSpot.x;
+                HotspotY = savedSpot.y;
+            }
+            else
+            {
+                HotspotX = 0f;
+                HotspotY = 0f;
+            }
         }
 
         private static void SaveSettings()
         {
+            SaveHotspotDictionary();
+
             KSP.IO.PluginConfiguration config = KSP.IO.PluginConfiguration.CreateForType<CursorSettings>();
             config.SetValue("ModEnabled", ModEnabled);
             config.SetValue("EnableInFlight", EnableInFlight);
@@ -626,9 +926,71 @@ namespace EnhancedCursor
             config.SetValue("HaloOpacity", HaloOpacity);
             config.SetValue("EnableCustomCursor", EnableCustomCursor);
             config.SetValue("SelectedCursorFileName", SelectedCursorFileName);
-            config.SetValue("HotspotX", HotspotX);
-            config.SetValue("HotspotY", HotspotY);
             config.save();
+        }
+
+
+        private static class SimpleJson
+        {
+            public static string ToJson(Dictionary<string, Vector2> dict)
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("{");
+                int index = 0;
+                foreach (var pair in dict)
+                {
+                    string escapedKey = pair.Key.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    sb.Append($"  \"{escapedKey}\": {{ \"x\": {pair.Value.x.ToString(CultureInfo.InvariantCulture)}, \"y\": {pair.Value.y.ToString(CultureInfo.InvariantCulture)} }}");
+                    if (index < dict.Count - 1) sb.Append(",");
+                    sb.AppendLine();
+                    index++;
+                }
+                sb.AppendLine("}");
+                return sb.ToString();
+            }
+
+            public static Dictionary<string, Vector2> FromJson(string json)
+            {
+                Dictionary<string, Vector2> dict = new Dictionary<string, Vector2>();
+                if (string.IsNullOrEmpty(json)) return dict;
+
+                string[] lines = json.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (string line in lines)
+                {
+                    if (line.Contains(":") && line.Contains("{"))
+                    {
+                        int keyStart = line.IndexOf('"');
+                        int keyEnd = line.IndexOf('"', keyStart + 1);
+                        int objStart = line.IndexOf('{');
+
+                        if (keyStart >= 0 && keyEnd > keyStart && objStart > keyEnd)
+                        {
+                            string key = line.Substring(keyStart + 1, keyEnd - keyStart - 1);
+                            string body = line.Substring(objStart);
+
+                            float x = ExtractFloat(body, "x");
+                            float y = ExtractFloat(body, "y");
+                            dict[key] = new Vector2(x, y);
+                        }
+                    }
+                }
+                return dict;
+            }
+
+            private static float ExtractFloat(string text, string key)
+            {
+                int keyIdx = text.IndexOf($"\"{key}\"");
+                if (keyIdx < 0) return 0f;
+                int colonIdx = text.IndexOf(':', keyIdx);
+                if (colonIdx < 0) return 0f;
+                int start = colonIdx + 1;
+                while (start < text.Length && char.IsWhiteSpace(text[start])) start++;
+                int end = start;
+                while (end < text.Length && (char.IsDigit(text[end]) || text[end] == '.' || text[end] == '-')) end++;
+                string numStr = text.Substring(start, end - start);
+                float.TryParse(numStr, NumberStyles.Float, CultureInfo.InvariantCulture, out float result);
+                return result;
+            }
         }
     }
 }
