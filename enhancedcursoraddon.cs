@@ -13,7 +13,8 @@ namespace EnhancedCursor
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
         [DllImport("user32.dll")] private static extern bool ClipCursor(ref RECT lpRect);
         [DllImport("user32.dll")] private static extern bool ClipCursor(IntPtr lpRect);
-        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+        [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
         [DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
 
         [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
@@ -160,6 +161,8 @@ namespace EnhancedCursor
         {
             EnforceCursorState();
 
+            if (Event.current.type != EventType.Repaint) return;
+
             if (CursorSettings.IsActiveInCurrentScene() && !isPanning && !isIdleHidden && !(CursorSettings.HideCursorInF2 && isUIHidden))
             {
                 if (CursorSettings.EnableCursorHalo && Cursor.visible && haloTexture != null)
@@ -219,12 +222,26 @@ namespace EnhancedCursor
                 IntPtr hWnd = GetActiveWindow();
                 if (hWnd != IntPtr.Zero)
                 {
-                    RECT rect;
-                    if (GetWindowRect(hWnd, out rect))
+                    RECT clientRect;
+                    if (GetClientRect(hWnd, out clientRect))
                     {
-                        ClipCursor(ref rect);
-                        isWindowClipped = true;
-                        return;
+                        POINT upperLeft = new POINT { X = clientRect.Left, Y = clientRect.Top };
+                        POINT lowerRight = new POINT { X = clientRect.Right, Y = clientRect.Bottom };
+
+                        if (ClientToScreen(hWnd, ref upperLeft) && ClientToScreen(hWnd, ref lowerRight))
+                        {
+                            RECT screenRect = new RECT
+                            {
+                                Left = upperLeft.X,
+                                Top = upperLeft.Y,
+                                Right = lowerRight.X,
+                                Bottom = lowerRight.Y
+                            };
+
+                            ClipCursor(ref screenRect);
+                            isWindowClipped = true;
+                            return;
+                        }
                     }
                 }
             }
@@ -273,14 +290,40 @@ namespace EnhancedCursor
             }
         }
 
+        private bool GetWindowCenterPoint(out POINT centerPt)
+        {
+            centerPt = new POINT { X = 0, Y = 0 };
+            IntPtr hWnd = GetActiveWindow();
+            if (hWnd == IntPtr.Zero) return false;
+
+            RECT clientRect;
+            if (GetClientRect(hWnd, out clientRect))
+            {
+                POINT centerClient = new POINT
+                {
+                    X = (clientRect.Left + clientRect.Right) / 2,
+                    Y = (clientRect.Top + clientRect.Bottom) / 2
+                };
+
+                if (ClientToScreen(hWnd, ref centerClient))
+                {
+                    centerPt = centerClient;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void StartPanning()
         {
             isPanning = true;
 
-            if (CursorSettings.PinToCenterScreen)
+            if (CursorSettings.PinToCenterScreen && IsWindows)
             {
-                savedClickPos.X = Screen.currentResolution.width / 2;
-                savedClickPos.Y = Screen.currentResolution.height / 2;
+                if (!GetWindowCenterPoint(out savedClickPos))
+                {
+                    GetCursorPos(out savedClickPos);
+                }
             }
             else if (IsWindows)
             {
