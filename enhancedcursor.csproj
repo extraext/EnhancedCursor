@@ -6,6 +6,9 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     
     <KSPDirectory>D:\Steam\steamapps\common\Kerbal Space Program</KSPDirectory>
+	<AssemblyVersion>1.5.7.0</AssemblyVersion>
+	<FileVersion>1.5.7.0</FileVersion>
+	<Version>1.5.7</Version>
   </PropertyGroup>
 
   <ItemGroup>
