@@ -52,10 +52,7 @@ namespace EnhancedCursor
         public static bool PendingCursorApply = false;
         public static bool isCustomCursorApplied = false;
 
-        // idle aut-hide
-        private float idleTimer = 0f;
-        private Vector3 lastMousePos = Vector3.zero;
-        private static bool isIdleHidden = false;
+        public static bool isIdleHidden = false;
 
         // screenshot mode
         private bool uiHiddenF2 = false;
@@ -63,7 +60,6 @@ namespace EnhancedCursor
         private static Harmony harmonyInstance = null;
         private static Texture2D redDotTex = null;
         private static Texture2D crosshairTex = null;
-        private static Texture2D haloRingTex = null;
 
         public struct CursorFileItem
         {
@@ -134,37 +130,6 @@ namespace EnhancedCursor
                 crosshairTex.SetPixel(0, 0, new Color(0f, 1f, 0f, 0.75f));
                 crosshairTex.Apply();
             }
-
-            if (haloRingTex == null)
-            {
-                int sz = 64;
-                haloRingTex = new Texture2D(sz, sz, TextureFormat.RGBA32, false);
-                float center = sz / 2f;
-                float outerR = sz / 2f - 1f;
-                float innerR = outerR - 6f;
-
-                for (int y = 0; y < sz; y++)
-                {
-                    for (int x = 0; x < sz; x++)
-                    {
-                        float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center, center));
-                        if (dist >= innerR && dist <= outerR)
-                        {
-                            float alpha = Mathf.SmoothStep(0f, 1f, (outerR - dist) / 2f);
-                            if (dist < innerR + 2f)
-                                alpha = Mathf.SmoothStep(0f, 1f, (dist - innerR) / 2f);
-                            haloRingTex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
-                        }
-                        else
-                        {
-                            haloRingTex.SetPixel(x, y, Color.clear);
-                        }
-                    }
-                }
-                haloRingTex.filterMode = FilterMode.Bilinear;
-                haloRingTex.wrapMode = TextureWrapMode.Clamp;
-                haloRingTex.Apply();
-            }
         }
 
         private void Start()
@@ -197,7 +162,6 @@ namespace EnhancedCursor
 
             if (redDotTex != null) { DestroyImmediate(redDotTex); redDotTex = null; }
             if (crosshairTex != null) { DestroyImmediate(crosshairTex); crosshairTex = null; }
-            if (haloRingTex != null) { DestroyImmediate(haloRingTex); haloRingTex = null; }
         }
 
         private void OnLevelWasLoaded(GameScenes scene)
@@ -218,6 +182,8 @@ namespace EnhancedCursor
             }
             LoadedCursors.Clear();
 
+            HasActiveCursor = false;
+            ActiveCursorItem = default(CursorFileItem);
             lastAppliedTexture = null;
             lastAppliedHotspot = new Vector2(-1f, -1f);
         }
@@ -269,28 +235,36 @@ namespace EnhancedCursor
             PendingCursorApply = true;
         }
 
-        public static void OverwriteKSPStockTextures()
-        {
-            if (HasActiveCursor && ActiveCursorItem.Texture != null)
-            {
-                try
-                {
-                    var pointerIconField = AccessTools.Field(typeof(Mouse), "pointerIcon");
-                    if (pointerIconField != null)
-                    {
-                        pointerIconField.SetValue(null, ActiveCursorItem.Texture);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[EnhancedCursor] Could not assign Mouse.pointerIcon: {ex.Message}");
-                }
-            }
-        }
+		private static readonly System.Reflection.FieldInfo pointerIconField = AccessTools.Field(typeof(Mouse), "pointerIcon");
+
+		public static void OverwriteKSPStockTextures()
+		{
+			if (CameraManager.Instance != null && CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA)
+			{
+				if (Input.GetMouseButton(1) || Cursor.lockState == CursorLockMode.Locked)
+				{
+					return;
+				}
+			}
+
+			if (HasActiveCursor && ActiveCursorItem.Texture != null && pointerIconField != null)
+			{
+				try
+				{
+					pointerIconField.SetValue(null, ActiveCursorItem.Texture);
+				}
+				catch (Exception ex)
+				{
+					Debug.LogWarning($"[EnhancedCursor] Could not assign Mouse.pointerIcon: {ex.Message}");
+				}
+			}
+		}
 
         public static void ApplyHardwareCursor(bool forceVisible = true)
 		{
-			if (ModEnabled && EnableCustomCursor && HasActiveCursor && IsActiveInCurrentScene() && ActiveCursorItem.Texture != null)
+			bool isCurrentlyPanning = EnhancedCursorAddon.Instance != null && EnhancedCursorAddon.Instance.IsPanning;
+
+			if (ModEnabled && EnableCustomCursor && HasActiveCursor && IsActiveInCurrentScene())
 			{
 				Vector2 targetHotspot = new Vector2(Mathf.Round(HotspotX), Mathf.Round(HotspotY));
 
@@ -303,7 +277,7 @@ namespace EnhancedCursor
 
 				OverwriteKSPStockTextures();
 
-				if (forceVisible && !isIdleHidden && !Input.GetMouseButton(1))
+				if (forceVisible && !isIdleHidden && !isCurrentlyPanning)
 				{
 					Cursor.visible = true;
 				}
@@ -314,7 +288,7 @@ namespace EnhancedCursor
 			{
 				Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
 
-				if (forceVisible && !Input.GetMouseButton(1))
+				if (forceVisible && !isCurrentlyPanning)
 				{
 					Cursor.visible = true;
 				}
@@ -334,8 +308,8 @@ namespace EnhancedCursor
 
                 if (ImageConversion.LoadImage(tex, fileData))
                 {
-                    tex.filterMode = FilterMode.Point; 
-                    tex.wrapMode = TextureWrapMode.Clamp; 
+                    tex.filterMode = FilterMode.Point;
+                    tex.wrapMode = TextureWrapMode.Clamp;
                     return tex;
                 }
             }
@@ -405,43 +379,9 @@ namespace EnhancedCursor
 
         private void Update()
         {
-            // window bounds lock handling
-            if (ModEnabled && LockToWindow)
-                Cursor.lockState = CursorLockMode.Confined;
-            else if (Cursor.lockState == CursorLockMode.Confined)
-                Cursor.lockState = CursorLockMode.None;
-
             if (ModEnabled && HideCursorInF2 && uiHiddenF2)
             {
                 Cursor.visible = false;
-            }
-
-            if (ModEnabled && EnableIdleAutoHide && HighLogic.LoadedScene == GameScenes.FLIGHT)
-            {
-                if (Input.mousePosition == lastMousePos)
-                {
-                    idleTimer += Time.unscaledDeltaTime;
-                    if (idleTimer >= IdleHideTimeout && !isIdleHidden)
-                    {
-                        Cursor.visible = false;
-                        isIdleHidden = true;
-                    }
-                }
-                else
-                {
-                    idleTimer = 0f;
-                    if (isIdleHidden)
-                    {
-                        Cursor.visible = true;
-                        isIdleHidden = false;
-                    }
-                }
-                lastMousePos = Input.mousePosition;
-            }
-            else if (isIdleHidden)
-            {
-                Cursor.visible = true;
-                isIdleHidden = false;
             }
 
             // UI camera control lock management
@@ -526,19 +466,6 @@ namespace EnhancedCursor
         // GUI
         private void OnGUI()
         {
-
-            if (ModEnabled && EnableCursorHalo && !isIdleHidden && (!HideCursorInF2 || !uiHiddenF2) && IsActiveInCurrentScene())
-            {
-                Vector2 mousePos = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-                float size = HaloSize;
-                Rect haloRect = new Rect(mousePos.x - (size / 2f), mousePos.y - (size / 2f), size, size);
-
-                Color prevColor = GUI.color;
-                GUI.color = new Color(1f, 1f, 1f, HaloOpacity);
-                if (haloRingTex != null) GUI.DrawTexture(haloRect, haloRingTex);
-                GUI.color = prevColor;
-            }
-
             if (showWindow)
             {
                 Event e = Event.current;
@@ -678,23 +605,9 @@ namespace EnhancedCursor
                                 PendingCursorApply = true;
                             }
 
-                            if (isSelected && item.Texture != null && redDotTex != null)
-                            {
-                                float texW = Mathf.Max(1f, item.Texture.width);
-                                float texH = Mathf.Max(1f, item.Texture.height);
-
-                                float normX = Mathf.Clamp01(HotspotX / texW);
-                                float normY = Mathf.Clamp01(HotspotY / texH);
-
-                                float dotX = buttonRect.x + (normX * (buttonRect.width - 6));
-                                float dotY = buttonRect.y + (normY * (buttonRect.height - 6));
-
-                                GUI.DrawTexture(new Rect(dotX, dotY, 5, 5), redDotTex);
-                            }
-
                             GUI.backgroundColor = Color.white;
                             count++;
-                            if (count % columns == 0)
+                            if (count % columns == 0 && count < LoadedCursors.Count)
                             {
                                 GUILayout.EndHorizontal();
                                 GUILayout.BeginHorizontal();
@@ -929,7 +842,6 @@ namespace EnhancedCursor
             config.save();
         }
 
-
         private static class SimpleJson
         {
             public static string ToJson(Dictionary<string, Vector2> dict)
@@ -954,25 +866,30 @@ namespace EnhancedCursor
                 Dictionary<string, Vector2> dict = new Dictionary<string, Vector2>();
                 if (string.IsNullOrEmpty(json)) return dict;
 
-                string[] lines = json.Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (string line in lines)
+                int index = 0;
+                while (index < json.Length)
                 {
-                    if (line.Contains(":") && line.Contains("{"))
-                    {
-                        int keyStart = line.IndexOf('"');
-                        int keyEnd = line.IndexOf('"', keyStart + 1);
-                        int objStart = line.IndexOf('{');
+                    int keyStart = json.IndexOf('"', index);
+                    if (keyStart < 0) break;
 
-                        if (keyStart >= 0 && keyEnd > keyStart && objStart > keyEnd)
-                        {
-                            string key = line.Substring(keyStart + 1, keyEnd - keyStart - 1);
-                            string body = line.Substring(objStart);
+                    int keyEnd = json.IndexOf('"', keyStart + 1);
+                    if (keyEnd < 0) break;
 
-                            float x = ExtractFloat(body, "x");
-                            float y = ExtractFloat(body, "y");
-                            dict[key] = new Vector2(x, y);
-                        }
-                    }
+                    string key = json.Substring(keyStart + 1, keyEnd - keyStart - 1).Replace("\\\"", "\"").Replace("\\\\", "\\");
+
+                    int objStart = json.IndexOf('{', keyEnd);
+                    if (objStart < 0) break;
+
+                    int objEnd = json.IndexOf('}', objStart);
+                    if (objEnd < 0) break;
+
+                    string body = json.Substring(objStart, objEnd - objStart + 1);
+
+                    float x = ExtractFloat(body, "x");
+                    float y = ExtractFloat(body, "y");
+                    dict[key] = new Vector2(x, y);
+
+                    index = objEnd + 1;
                 }
                 return dict;
             }
