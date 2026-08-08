@@ -1,4 +1,5 @@
 using System;
+using System.Linq.Expressions;
 using System.Reflection;
 using UnityEngine;
 
@@ -7,14 +8,12 @@ namespace EnhancedCursor
     public static class ModChecker
     {
         private static bool isModPresent = false;
-        private static FieldInfo cachedField = null;
-        private static PropertyInfo cachedProperty = null;
+        private static Func<bool> activeGetter = null;
 
         public static void InitializeCheck(string assemblyName, string fullClassName, string memberName)
         {
             isModPresent = false;
-            cachedField = null;
-            cachedProperty = null;
+            activeGetter = null;
 
             try
             {
@@ -27,14 +26,28 @@ namespace EnhancedCursor
                         Type targetType = loadedAssembly.assembly.GetType(fullClassName);
                         if (targetType == null) continue;
 
-                        cachedField = targetType.GetField(memberName, BindingFlags.Public | BindingFlags.Static);
-                        cachedProperty = targetType.GetProperty(memberName, BindingFlags.Public | BindingFlags.Static);
+                        BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
 
-                        if (cachedField != null || cachedProperty != null)
+                        FieldInfo field = targetType.GetField(memberName, flags);
+                        if (field != null && field.FieldType == typeof(bool))
                         {
+                            var fieldExpr = Expression.Field(null, field);
+                            activeGetter = Expression.Lambda<Func<bool>>(fieldExpr).Compile();
                             isModPresent = true;
+                            break;
                         }
-                        break;
+
+                        PropertyInfo prop = targetType.GetProperty(memberName, flags);
+                        if (prop != null && prop.PropertyType == typeof(bool) && prop.CanRead)
+                        {
+                            MethodInfo getMethod = prop.GetGetMethod(true);
+                            if (getMethod != null)
+                            {
+                                activeGetter = (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), getMethod);
+                                isModPresent = true;
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -46,26 +59,17 @@ namespace EnhancedCursor
 
         public static bool IsActiveFast()
         {
-            if (!isModPresent) return false;
+            if (!isModPresent || activeGetter == null) return false;
 
             try
             {
-                if (cachedField != null && cachedField.FieldType == typeof(bool))
-                {
-                    return (bool)cachedField.GetValue(null);
-                }
-
-                if (cachedProperty != null && cachedProperty.PropertyType == typeof(bool))
-                {
-                    return (bool)cachedProperty.GetValue(null, null);
-                }
+                return activeGetter();
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[EnhancedCursor] Soft-check failed: {ex.Message}");
+                Debug.LogWarning($"[EnhancedCursor] Soft-check evaluation failed: {ex.Message}");
+                return false;
             }
-
-            return false;
         }
 
         public static bool IsLoaded(string assemblyName)
