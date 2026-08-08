@@ -4,12 +4,20 @@
     <AssemblyName>EnhancedCursor</AssemblyName>
     <OutputPath>bin\Release</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <LangVersion>latest</LangVersion>
+
+    <KSPDirectory Condition="'$(KSPDirectory)' == ''">D:\Steam\steamapps\common\Kerbal Space Program</KSPDirectory>
     
-    <KSPDirectory>D:\Steam\steamapps\common\Kerbal Space Program</KSPDirectory>
-	<AssemblyVersion>1.5.7.0</AssemblyVersion>
-	<FileVersion>1.5.7.0</FileVersion>
-	<Version>1.5.7</Version>
+    <AssemblyVersion>1.5.9.0</AssemblyVersion>
+    <FileVersion>1.5.9.0</FileVersion>
+    <Version>1.5.9</Version>
   </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <Reference>
+      <Private>False</Private>
+    </Reference>
+  </ItemDefinitionGroup>
 
   <ItemGroup>
     <Reference Include="Assembly-CSharp">
@@ -30,11 +38,11 @@
     <Reference Include="UnityEngine.AnimationModule">
       <HintPath>$(KSPDirectory)\KSP_x64_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
     </Reference>
-	<Reference Include="UnityEngine.ImageConversionModule">
-	  <HintPath>$(KSPDirectory)\KSP_x64_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
-	</Reference>
-	<Reference Include="0Harmony">
-	  <HintPath>$(KSPDirectory)\Gamedata\000_Harmony\0Harmony.dll</HintPath>
-	</Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(KSPDirectory)\KSP_x64_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(KSPDirectory)\GameData\000_Harmony\0Harmony.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>
