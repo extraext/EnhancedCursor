@@ -14,7 +14,7 @@ also change the hotspot of the cursor so it matches with the supposed hotspot of
 
 It is also **configurable**, as it includes several features like Idle Cursor Auto-hide feature and the ability to hide the cursor while in screenshot mode.
 
-### *(**Note**: This mod is only compatible with Windows PCs.)*
+### (**Note**: This mod is only compatible on Windows).
 ----------------------------------------------------------------------------------
 
 **Installation:** Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.3.0\Gamedata to the Gamedata folder in your KSP directory.
