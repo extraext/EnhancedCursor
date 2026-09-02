@@ -17,16 +17,10 @@ It is also **configurable**, as it includes several features like hiding your cu
      Note: This mod is only compatible on Windows.
 ----------------------------------------------------------------------------------
 
-**Installation:** Unzip the downloaded file, then move the mod folder (named EnhancedCursor) in EnhancedCursor_v1.3.0\Gamedata to the Gamedata folder in your KSP directory.
+**Installation:** Unzip the downloaded file, then move the mod folder in Gamedata/EnhancedCursor_v1.7 to the Gamedata folder in your KSP directory.
 
 **Dependencies:** Harmony is a dependency, to get it, you can go to CKAN and install it, or [install it from github](https://github.com/KSPModdingLibs/HarmonyKSP/releases/tag/2.2.1.0).
 
 ----------------------------------------------------------------------------------
-## License
-
-
-This mod is licensed under the **[Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)](https://creativecommons.org/licenses/by-nc-nd/4.0/)** license.
-
-----------------------------------------------------------------------------------
-*if you encounter any bugs, please inform me by creating a new issue. Pull requests are not allowed.*
+## License:  **[CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/)**.
 
