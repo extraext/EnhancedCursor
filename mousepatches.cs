@@ -10,21 +10,21 @@ namespace EnhancedCursor
         [HarmonyPrefix]
         public static bool SetCursor_Prefix(ref Texture2D texture, ref Vector2 hotspot, ref CursorMode cursorMode)
         {
-            if (EnhancedCursorAddon.Instance != null && EnhancedCursorAddon.Instance.IsPanning)
+            if (EnhancedCursorAddon.Instance != null && EnhancedCursorAddon.Instance.IsPanHiding)
             {
                 return false; 
             }
 
             if (CursorSettings.ModEnabled && CursorSettings.EnableCustomCursor && CursorSettings.HasActiveCursor && CursorSettings.IsActiveInCurrentScene())
-            {
-                var activeItem = CursorSettings.ActiveCursorItem;
-                if (activeItem.Texture != null)
-                {
-                    texture = activeItem.Texture;
-                    hotspot = new Vector2(CursorSettings.HotspotX, CursorSettings.HotspotY);
-                    cursorMode = CursorMode.Auto;
-                }
-            }
+			{
+				Texture2D activeTex = CursorSettings.GetActiveCursorTexture();
+				if (activeTex != null)
+				{
+					texture = activeTex;
+					hotspot = new Vector2(CursorSettings.HotspotX, CursorSettings.HotspotY);
+					cursorMode = CursorMode.Auto;
+					}
+				}
             return true;
         }
 
