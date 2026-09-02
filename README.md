@@ -1,7 +1,7 @@
 # EnhancedCursor
 This mod is a QoL mod for KSP that improves your camera control.
 
-![](https://cdn.discordapp.com/attachments/979471883886030868/1536862733067354142/Screenshot_2026-08-07_125121.png?ex=6a7cf275&is=6a7ba0f5&hm=9c381cc9b38933b62464464e207c9ca4805a06be3f597c09bf1ab50ae7fc2f51&)
+![](https://media.discordapp.net/attachments/979471883886030868/1544800017808756837/Screenshot_2026-09-02_224148.png?ex=6a99d2a1&is=6a988121&hm=222fee672deb2c05dfa5012b79901037435dc42edf28523c1f28d6dd297f8616&=&format=webp&quality=lossless)
 
 **What it does:**
 
