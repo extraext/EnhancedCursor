@@ -12,7 +12,7 @@ This mod is a QoL mod that enhances your cursor and camera control.
 also change the hotspot of the cursor so it matches with its supposed hotspot.
 
 
-It is also **configurable**, as it includes several features like hiding your cursor after a certain amount of time of inactivity, the ability to hide the cursor while in screenshot mode, and more.
+It's also **configurable**, as it includes several features like hiding your cursor after a certain amount of time of inactivity, the ability to hide the cursor while in screenshot mode, and more.
 
      Note: This mod is only compatible on Windows.
 ----------------------------------------------------------------------------------
