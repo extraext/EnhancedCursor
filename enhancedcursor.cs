@@ -10,6 +10,11 @@ namespace EnhancedCursor
         public static EnhancedCursorAddon Instance { get; private set; }
 		
 		public bool IsPanning => isPanning;
+        public bool IsPanHiding => isPanning && (IsInIVA || !CursorSettings.HideCursorOnlyOnPanMove || isPanMoving);
+		private bool IsInIVA => HighLogic.LoadedScene == GameScenes.FLIGHT && 
+                        CameraManager.Instance != null && 
+                        (CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA || 
+                         CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.Internal);
 
         [DllImport("user32.dll")] private static extern bool SetCursorPos(int X, int Y);
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
@@ -18,11 +23,18 @@ namespace EnhancedCursor
         [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
         [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
         [DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
+		[DllImport("user32.dll")] private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, int dwExtraInfo);
+		private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+		private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+		private bool skipNextRightClick = false;
 
         [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
         [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 
         private bool isPanning = false;
+        private bool isPanMoving = false;
+        private Vector3 panStartMousePos;
+        
         private bool isUIHidden = false;
         private bool isInFacility = false;
         private POINT savedClickPos;
@@ -32,6 +44,8 @@ namespace EnhancedCursor
         private float idleTimer = 0f;
         private bool isIdleHidden = false;
         private bool isWindowClipped = false;
+        private bool wasHiddenByUs = false; 
+        private bool wasIVA = false;
 
         private Texture2D haloTexture = null;
 
@@ -121,13 +135,10 @@ namespace EnhancedCursor
 		{
 			UpdateWindowClamp();
 
-			bool isInvalidScene = !CursorSettings.ModEnabled || 
-				HighLogic.LoadedScene == GameScenes.MAINMENU || 
-				HighLogic.LoadedScene == GameScenes.SETTINGS || 
-				HighLogic.LoadedScene == GameScenes.CREDITS || 
-				HighLogic.LoadedScene == GameScenes.LOADING || 
-				HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
-				(HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility);
+			bool isInvalidScene = !CursorSettings.IsActiveInCurrentScene() || 
+			HighLogic.LoadedScene == GameScenes.LOADING || 
+			HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
+			(HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility);
 
 			if (isInvalidScene)
 			{
@@ -138,35 +149,57 @@ namespace EnhancedCursor
 
 			TrackIdleActivity();
 
-			if (HighLogic.LoadedScene == GameScenes.FLIGHT && !CursorSettings.EnableInFlight) return;
-			if (HighLogic.LoadedScene == GameScenes.EDITOR && !CursorSettings.EnableInEditor) return;
-			if ((HighLogic.LoadedScene == GameScenes.SPACECENTER || HighLogic.LoadedScene == GameScenes.TRACKSTATION) && !CursorSettings.EnableInKSC) return;
-
 			if (ModChecker.IsActiveFast())
 			{
 				if (isPanning) StopPanning();
 				return;
 			}
+			
+			if (HighLogic.LoadedScene == GameScenes.MAINMENU || 
+				HighLogic.LoadedScene == GameScenes.SETTINGS || 
+				HighLogic.LoadedScene == GameScenes.CREDITS)
+			{
+				if (isPanning) StopPanning();
+				return;
+			}
 
-			// iva detection
-			bool isIVA = (HighLogic.LoadedScene == GameScenes.FLIGHT && 
-					   CameraManager.Instance != null && 
-						(CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA || 
-						 CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.Internal));
+			bool isIVA = IsInIVA;
+
+            if (isIVA != wasIVA)
+		{
+			if (wasIVA && !isIVA) 
+			{
+				if (isPanning)
+				{
+					StopPanning();
+					skipNextRightClick = true;
+					mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+					mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+				}
+			}
+			else if (!wasIVA && isIVA) 
+			{
+				if (isPanning) StopPanning();
+				mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+			}
+
+			Cursor.lockState = CursorLockMode.None;
+			wasIVA = isIVA;
+		}
 
 			if (isIVA)
+		{
+			if (Input.GetMouseButtonDown(1))
 			{
-				if (Input.GetMouseButtonDown(1))
-				{
-					if (!isPanning)
-					{
-						StartPanning();
-					}
-					else
-					{
-						StopPanning();
-					}
-				}
+				if (!isPanning) StartPanning();
+				else StopPanning();
+			}
+		}
+		else
+		{
+			if (skipNextRightClick)
+			{
+				if (Input.GetMouseButtonUp(1)) skipNextRightClick = false;
 			}
 			else
 			{
@@ -177,9 +210,17 @@ namespace EnhancedCursor
 				else if (Input.GetMouseButtonUp(1) && isPanning) 
 				{
 					StopPanning();
-				
 				}
 			}
+		}
+
+            if (isPanning && !isPanMoving)
+            {
+                if (Vector3.Distance(Input.mousePosition, panStartMousePos) >= 1.0f)
+                {
+                    isPanMoving = true;
+                }
+            }
 		}
 
         private void LateUpdate()
@@ -193,7 +234,7 @@ namespace EnhancedCursor
 
             if (Event.current.type != EventType.Repaint) return;
 
-            if (CursorSettings.IsActiveInCurrentScene() && !isPanning && !isIdleHidden && !(CursorSettings.HideCursorInF2 && isUIHidden))
+            if (CursorSettings.IsActiveInCurrentScene() && !IsPanHiding && !isIdleHidden && !(CursorSettings.HideCursorInF2 && isUIHidden))
             {
                 if (CursorSettings.EnableCursorHalo && Cursor.visible && haloTexture != null)
                 {
@@ -211,13 +252,10 @@ namespace EnhancedCursor
 
         private void EnforceCursorState()
         {
-            bool isInvalidScene = !CursorSettings.ModEnabled || 
-                HighLogic.LoadedScene == GameScenes.MAINMENU || 
-                HighLogic.LoadedScene == GameScenes.SETTINGS || 
-                HighLogic.LoadedScene == GameScenes.CREDITS || 
-                HighLogic.LoadedScene == GameScenes.LOADING || 
-                HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
-                (HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility);
+            bool isInvalidScene = !CursorSettings.IsActiveInCurrentScene() || 
+			HighLogic.LoadedScene == GameScenes.LOADING || 
+			HighLogic.LoadedScene == GameScenes.LOADINGBUFFER ||
+			(HighLogic.LoadedScene == GameScenes.SPACECENTER && isInFacility);
 
             if (isInvalidScene)
             {
@@ -225,18 +263,25 @@ namespace EnhancedCursor
                 return;
             }
 
-            bool shouldHideCursor = isPanning || (CursorSettings.HideCursorInF2 && isUIHidden) || isIdleHidden;
+            bool shouldHideCursor = IsPanHiding || (CursorSettings.HideCursorInF2 && isUIHidden) || isIdleHidden;
 
             if (shouldHideCursor)
             {
-                if (isPanning) SetCursorPos(savedClickPos.X, savedClickPos.Y);
+                if (IsPanHiding) SetCursorPos(savedClickPos.X, savedClickPos.Y);
                 Cursor.visible = false;
+                wasHiddenByUs = true;
             }
             else
             {
                 if (CursorSettings.IsActiveInCurrentScene())
                 {
                     CursorSettings.ApplyHardwareCursor(true);
+                    
+                    if (wasHiddenByUs)
+                    {
+                        Cursor.visible = true;
+                        wasHiddenByUs = false;
+                    }
                 }
             }
         }
@@ -298,7 +343,7 @@ namespace EnhancedCursor
                     CursorSettings.ApplyHardwareCursor(true);
                 }
             }
-            else if (CursorSettings.EnableIdleAutoHide && HighLogic.LoadedScene == GameScenes.FLIGHT && CursorSettings.EnableInFlight && !isUIHidden)
+            else if (CursorSettings.EnableIdleAutoHide && CursorSettings.IsActiveInCurrentScene() && !isUIHidden)
             {
                 idleTimer += Time.deltaTime;
                 if (idleTimer >= CursorSettings.IdleHideTimeout)
@@ -346,40 +391,60 @@ namespace EnhancedCursor
         }
 
         private void StartPanning()
-        {
-            isPanning = true;
+		{
+			isPanning = true;
+			isPanMoving = false;
+			panStartMousePos = Input.mousePosition;
 
-            if (CursorSettings.PinToCenterScreen)
-            {
-                if (!GetWindowCenterPoint(out savedClickPos))
-                {
-                    GetCursorPos(out savedClickPos);
-                }
-            }
-            else
-            {
-                GetCursorPos(out savedClickPos);
-            }
+			bool shouldPin = CursorSettings.PinToCenterScreen;
+			if (shouldPin && CursorSettings.PinOnlyInIVA)
+			{
+				bool isIVA = (HighLogic.LoadedScene == GameScenes.FLIGHT && 
+						CameraManager.Instance != null && 
+					   (CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA || 
+					  CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.Internal));
+                     
+				if (!isIVA) shouldPin = false; 
+			}
 
-            if (HighLogic.LoadedScene == GameScenes.SPACECENTER)
-            {
-                InputLockManager.SetControlLock(ControlTypes.KSC_FACILITIES, LOCK_ID);
-            }
+			if (shouldPin)
+			{
+				if (!GetWindowCenterPoint(out savedClickPos))
+				{
+					GetCursorPos(out savedClickPos);
+				}
+			}
+			else
+			{
+				GetCursorPos(out savedClickPos);
+			}
 
-            Cursor.visible = false;
-        }
+			if (HighLogic.LoadedScene == GameScenes.SPACECENTER)
+			{
+				InputLockManager.SetControlLock(ControlTypes.KSC_FACILITIES, LOCK_ID);
+			}
+		}
 
         private void StopPanning()
         {
-            if (!isPanning) return;
+			if (!isPanning) return;
 
-            isPanning = false;
+			isPanning = false;
 
-            InputLockManager.RemoveControlLock(LOCK_ID);
+			InputLockManager.RemoveControlLock(LOCK_ID);
 
-            SetCursorPos(savedClickPos.X, savedClickPos.Y);
+			Cursor.lockState = CursorLockMode.None;
+			mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+
+			if (isPanMoving || !CursorSettings.HideCursorOnlyOnPanMove)
+			{
+				SetCursorPos(savedClickPos.X, savedClickPos.Y);
+			}
+
+            isPanMoving = false;
 
             Cursor.visible = true;
+            wasHiddenByUs = false; 
             CursorSettings.ApplyHardwareCursor(true);
         }
 
