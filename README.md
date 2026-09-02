@@ -6,7 +6,7 @@ This mod is a QoL mod that enhances your cursor and camera control.
 ### Functionality:
 - **Smooth Camera Panning**: Hides and locks your cursor in place while holding right-click, letting you orbit your camera infinitely without hitting your physical monitor edges or letting the cursor drift.
 
-- **No Weird Jumps**: Prevents awkward cursor resetting and stops unwanted selections or hovers through the center of your screen during camera movement.
+- **No Weird Behaviour**: Prevents awkward cursor resetting and stops unwanted selections or hovers through the center of your screen during camera movement.
 
 - **Customizable Cursors**: You can place .png cursor files into EnhancedCursor/Cursors and access all of them through the Gallery section after enabling the feature. You can
 also change the hotspot of the cursor so it matches with its supposed hotspot.
