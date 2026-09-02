@@ -8,8 +8,8 @@ This mod is a QoL mod that enhances your cursor and camera control.
 
 - **No Weird Jumps**: Prevents awkward cursor resetting and stops unwanted selections or hovers through the center of your screen during camera movement.
 
-- **Customizable Cursors**: you can now place .png cursor files into EnhancedCursor/Cursors and enjoy the customized cursor, all .pngs are accessible through the Gallery section after enabling the feature. You can
-also change the hotspot of the cursor so it matches with the supposed hotspot of your custom cursor.
+- **Customizable Cursors**: You can place .png cursor files into EnhancedCursor/Cursors and all access all of them through the Gallery section after enabling the feature. You can
+also change the hotspot of the cursor so it matches with its supposed hotspot.
 
 
 It is also **configurable**, as it includes several features like hiding your cursor after a certain amount of time of inactivity, the ability to hide the cursor while in screenshot mode, and more.
