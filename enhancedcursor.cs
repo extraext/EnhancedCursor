@@ -215,12 +215,17 @@ namespace EnhancedCursor
 		}
 
             if (isPanning && !isPanMoving)
-            {
-                if (Vector3.Distance(Input.mousePosition, panStartMousePos) >= 1.0f)
-                {
-                    isPanMoving = true;
-                }
-            }
+			{
+				if (Vector3.Distance(Input.mousePosition, panStartMousePos) >= 1.5f) 
+				{
+					isPanMoving = true;
+
+					if (HighLogic.LoadedScene == GameScenes.SPACECENTER)
+					{
+						InputLockManager.SetControlLock(ControlTypes.KSC_FACILITIES, LOCK_ID);
+					}
+				}
+			}
 		}
 
         private void LateUpdate()
@@ -417,11 +422,6 @@ namespace EnhancedCursor
 			else
 			{
 				GetCursorPos(out savedClickPos);
-			}
-
-			if (HighLogic.LoadedScene == GameScenes.SPACECENTER)
-			{
-				InputLockManager.SetControlLock(ControlTypes.KSC_FACILITIES, LOCK_ID);
 			}
 		}
 
