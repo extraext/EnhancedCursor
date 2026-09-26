@@ -1,8 +1,6 @@
 # EnhancedCursor
 This mod is a QoL mod that enhances your cursor and camera control.
 
-![](https://media.discordapp.net/attachments/979471883886030868/1544800017808756837/Screenshot_2026-09-02_224148.png?ex=6a99d2a1&is=6a988121&hm=222fee672deb2c05dfa5012b79901037435dc42edf28523c1f28d6dd297f8616&=&format=webp&quality=lossless)
-
 ### Functionality:
 - **Smooth Camera Panning**: Hides and locks your cursor in place while holding right-click, letting you orbit your camera infinitely without hitting your physical monitor edges or letting the cursor drift.
 
